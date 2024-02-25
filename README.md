@@ -1,0 +1,3 @@
+# timealloc
+Time management application. Managing time can be just like managing memory, frustrating...
+
