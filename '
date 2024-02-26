@@ -15,16 +15,16 @@ schedule: [24]cstring
 UTC_OFFSET :: -5
 
 FONTSIZE :: 24
-CLOCKSIZE :: 10
 HOUR_RECT_W :: 125
 HOUR_RECT_H :: 50
-RECT_PADDING :: 2
+CLOCK_H :: 10
 WINDOW_PADDING_X :: 0
 WINDOW_PADDING_Y :: 0
+BLOCK_PADDING :: 2
 
 main :: proc() {
-    initial_screen_w: i32 = 12*HOUR_RECT_W + 12*RECT_PADDING + WINDOW_PADDING_X
-    initial_screen_h: i32 = 2*HOUR_RECT_H + 2*CLOCKSIZE + WINDOW_PADDING_Y
+    initial_screen_w: i32 = 12*HOUR_RECT_W + 12*BLOCK_PADDING + WINDOW_PADDING_X
+    initial_screen_h: i32 = 2*HOUR_RECT_H + 2*CLOCK_H + WINDOW_PADDING_Y
     rl.InitWindow(initial_screen_w, initial_screen_h, "timealloc")
     
     rl.SetWindowState({.WINDOW_RESIZABLE})
@@ -48,24 +48,6 @@ main :: proc() {
         rl.BeginDrawing()
 
         // Drawing the clock
-        {
-            v1 := rl.Vector2{0.5, 1.0} * CLOCKSIZE - rl.Vector2{CLOCKSIZE/2, 0}
-            v2 := rl.Vector2{1.0, 0.0} * CLOCKSIZE - rl.Vector2{CLOCKSIZE/2, 0}
-            v3 := rl.Vector2{0.0, 0.0} * CLOCKSIZE - rl.Vector2{CLOCKSIZE/2, 0}
-
-            pos: rl.Vector2
-            pos.x = screen_w/2 - 6*(HOUR_RECT_W + RECT_PADDING)
-            pos.y = screen_h/2 - HOUR_RECT_H
-
-            if clock <= 12 {
-                pos.x += clock * (HOUR_RECT_W + RECT_PADDING)
-                pos.y -= HOUR_RECT_H + number_h
-            } else {
-                pos.x += (clock - 12) * (HOUR_RECT_W + RECT_PADDING)
-                pos.y += HOUR_RECT_H
-            }
-            rl.DrawTriangle(v1 + pos, v2 + pos, v3 + pos, rl.WHITE)
-        }
         
         // Drawing the hour blocks
         for hour: f32; hour <= 24; hour += 1 {
@@ -73,11 +55,11 @@ main :: proc() {
 
             // Splitting appart in two rows the hours of the day.
             if (hour < 12) { 
-                rect_pos.x = screen_w/2 + (HOUR_RECT_W + RECT_PADDING)*(hour - 6)
+                rect_pos.x = screen_w/2 + HOUR_RECT_W*(hour - 6) + BLOCK_PADDING*(hour - 6)
                 rect_pos.y = screen_h/2 - HOUR_RECT_H
             } else {
-                rect_pos.x = screen_w/2 + (HOUR_RECT_W + RECT_PADDING)*(hour - 18)
-                rect_pos.y = screen_h/2 + number_h + CLOCKSIZE
+                rect_pos.x = screen_w/2 + HOUR_RECT_W*(hour - 18) + BLOCK_PADDING*(hour - 18)
+                rect_pos.y = screen_h/2 + number_h + CLOCK_H
             }
             
             rect := rl.Rectangle{rect_pos.x, rect_pos.y, HOUR_RECT_W, HOUR_RECT_H}
@@ -100,7 +82,7 @@ main :: proc() {
             // Draw 12 also on the first row.
             if (hour == 12) {
                 text_pos := rl.Vector2{
-                    screen_w/2 + HOUR_RECT_W*6 + RECT_PADDING*6,
+                    screen_w/2 + HOUR_RECT_W*6 + BLOCK_PADDING*6,
                     screen_h/2 - HOUR_RECT_H - number_h/2,
                 }            
                 draw_text_centered(hour_text, text_pos)
