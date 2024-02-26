@@ -59,7 +59,7 @@ main :: proc() {
 
             if clock <= 12 {
                 pos.x += clock * (HOUR_RECT_W + RECT_PADDING)
-                pos.y -= HOUR_RECT_H + number_h
+                pos.y -= CLOCKSIZE + number_h
             } else {
                 pos.x += (clock - 12) * (HOUR_RECT_W + RECT_PADDING)
                 pos.y += HOUR_RECT_H
