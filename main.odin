@@ -51,6 +51,9 @@ main :: proc() {
         layer_h = HOUR_RECT_H + CLOCKSIZE + number_h
         clock = get_current_hour()
 
+        center_offset := rl.Vector2{0, 0}
+        if screen_h > N_LAYERS*layer_h do center_offset.y = screen_h/2 - N_LAYERS*layer_h/2
+
         // Moving the camera
         if mv := rl.GetMouseWheelMove(); mv != 0 {
             using cam
@@ -67,39 +70,41 @@ main :: proc() {
         // Cursor HUD background
         for i in 0..<N_LAYERS {
             color := rl.Color{35, 35, 85, 255}
-            rl.DrawRectangleV({0, f32(i) * layer_h}, {screen_w, CLOCKSIZE}, color)
+            pos := rl.Vector2{0, f32(i) * layer_h} + center_offset
+            rl.DrawRectangleV(pos, {screen_w, CLOCKSIZE}, color)
         }
         
         rl.BeginMode2D(cam)
 
         for i in 0..<N_LAYERS {
-            render_clock(i)
-            render_layer(i)
+            render_clock(i, center_offset)
+            render_layer(i, center_offset)
         }
         rl.EndMode2D()
         rl.EndDrawing()
     }
 }
 
-render_clock :: proc(layer: int) {
+render_clock :: proc(layer: int, offset := rl.Vector2{0, 0}) {
     pos := rl.Vector2{clock * (HOUR_RECT_W + RECT_PADDING*.75) + number_w, layer_h * f32(layer)}
 
     if layer == 0 do rl.DrawLineV({pos.x, 0}, {pos.x, screen_h}, {255, 255, 255, 100})
 
-    v1: rl.Vector2 = ({0.5, 1} - {.5, 0}) * CLOCKSIZE + pos
-    v2: rl.Vector2 = ({1.0, 0} - {.5, 0}) * CLOCKSIZE + pos
-    v3: rl.Vector2 = ({0.0, 0} - {.5, 0}) * CLOCKSIZE + pos
+    v1: rl.Vector2 = ({0.5, 1} - {.5, 0}) * CLOCKSIZE + pos + offset
+    v2: rl.Vector2 = ({1.0, 0} - {.5, 0}) * CLOCKSIZE + pos + offset
+    v3: rl.Vector2 = ({0.0, 0} - {.5, 0}) * CLOCKSIZE + pos + offset
     
     rl.DrawTriangle(v1, v2, v3, rl.GREEN)
 }
 
-render_layer :: proc(layer: int) {
+render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
     for hour: f32; hour < 24; hour += 1 {
 
         rect_pos := rl.Vector2{
             (HOUR_RECT_W + RECT_PADDING) * hour + number_w,
             (number_h + CLOCKSIZE) * f32(layer + 1) + HOUR_RECT_H * f32(layer),
         }
+        rect_pos += offset
         
         rect := rl.Rectangle{rect_pos.x, rect_pos.y, HOUR_RECT_W, HOUR_RECT_H}
         h, s, v: f32
@@ -117,13 +122,13 @@ render_layer :: proc(layer: int) {
         // Draw text at the top of the block
         hour_text := rl.TextFormat("%i", i32(hour))
         text_pos := rect_pos + rl.Vector2{0, -number_h/2}
-        draw_text_centered(hour_text, text_pos)
+        render_text_centered(hour_text, text_pos)
 
         // Draw the number 24
         if hour == 23 {
             hour_text := rl.TextFormat("%i", 24)
             text_pos := rect_pos + rl.Vector2{HOUR_RECT_W + RECT_PADDING, -number_h/2}
-            draw_text_centered(hour_text, text_pos)
+            render_text_centered(hour_text, text_pos)
         }
         
         // Draw lines to indicate half and quarter an hour.
@@ -155,7 +160,7 @@ get_number_dimentions :: proc() -> (f32, f32) {
     return measure.x, measure.y
 } 
 
-draw_text_centered :: proc(text: cstring, pos: rl.Vector2, color := rl.WHITE) {
+render_text_centered :: proc(text: cstring, pos: rl.Vector2, color := rl.WHITE) {
     spacing :: 0
     measure := rl.MeasureTextEx(font, text, FONTSIZE, spacing)
     rl.DrawTextEx(font, text, pos - measure/2, FONTSIZE, spacing, color)
