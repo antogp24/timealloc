@@ -20,13 +20,12 @@ FONTSIZE :: 24
 CLOCKSIZE :: 10
 HOUR_RECT_W :: 450
 HOUR_RECT_H :: 50
-RECT_PADDING :: 0
 WINDOW_PADDING_X :: 0
 WINDOW_PADDING_Y :: 0
 N_LAYERS :: 4
 
 main :: proc() {
-    initial_screen_w: i32 = 2 * (HOUR_RECT_W + RECT_PADDING) + WINDOW_PADDING_X
+    initial_screen_w: i32 = 2 * HOUR_RECT_W + WINDOW_PADDING_X
     initial_screen_h: i32 = (HOUR_RECT_H + CLOCKSIZE) * N_LAYERS + WINDOW_PADDING_Y
     rl.InitWindow(initial_screen_w, initial_screen_h, "timealloc")
     
@@ -56,13 +55,18 @@ main :: proc() {
 
         // Moving the camera
         if mv := rl.GetMouseWheelMove(); mv != 0 {
-            using cam
-            if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.LEFT_CONTROL) {
-                target.y = clamp(target.y - mv * layer_h, 0, HOUR_RECT_H + CLOCKSIZE + number_h)
-            } else {
-                target.x = clamp(target.x + mv * HOUR_RECT_W * 0.25, 0, 24*HOUR_RECT_W)
-            }
+            cam.target.x += mv * HOUR_RECT_W * 0.25
         }
+        if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.H) {
+            goto_current_hour(&cam)
+        }
+        if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.A) {
+            goto_hour(&cam, 0)
+        }
+        if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.E) {
+            goto_hour(&cam, 23)
+        }
+        cam.target.x = clamp(cam.target.x, 0, 24*HOUR_RECT_W)
 
         rl.ClearBackground(rl.BLACK)
         rl.BeginDrawing()
@@ -86,7 +90,7 @@ main :: proc() {
 }
 
 render_clock :: proc(layer: int, offset := rl.Vector2{0, 0}) {
-    pos := rl.Vector2{clock * (HOUR_RECT_W + RECT_PADDING*.75) + number_w, layer_h * f32(layer)}
+    pos := rl.Vector2{clock * HOUR_RECT_W + number_w, layer_h * f32(layer)}
 
     if layer == 0 do rl.DrawLineV({pos.x, 0}, {pos.x, screen_h}, {255, 255, 255, 100})
 
@@ -101,7 +105,7 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
     for hour: f32; hour < 24; hour += 1 {
 
         rect_pos := rl.Vector2{
-            (HOUR_RECT_W + RECT_PADDING) * hour + number_w,
+            HOUR_RECT_W * hour + number_w,
             (number_h + CLOCKSIZE) * f32(layer + 1) + HOUR_RECT_H * f32(layer),
         }
         rect_pos += offset
@@ -118,6 +122,14 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
             v = sin(2*PI*x - PI/2)*.4 + .5
         }
         rl.DrawRectangleRounded(rect, 0.4, 10, rl.ColorFromHSV(h, s, v))
+
+        // Draw black line to make it look like it has padding.
+        {
+            thick :: 2
+            start := rect_pos - {0, number_h + CLOCKSIZE}
+            end := rect_pos + {0, layer_h * f32(layer + 1)}
+            rl.DrawLineEx(start, end, thick, rl.BLACK)
+        }
         
         // Draw text at the top of the block
         hour_text := rl.TextFormat("%i", i32(hour))
@@ -127,7 +139,7 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
         // Draw the number 24
         if hour == 23 {
             hour_text := rl.TextFormat("%i", 24)
-            text_pos := rect_pos + rl.Vector2{HOUR_RECT_W + RECT_PADDING, -number_h/2}
+            text_pos := rect_pos + rl.Vector2{HOUR_RECT_W, -number_h/2}
             render_text_centered(hour_text, text_pos)
         }
         
@@ -147,12 +159,34 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
     }
 }
 
+hours_to_hms :: proc(hours: f32) -> (h, m, s: f32) {
+    whole := f32(int(hours))
+    decimal := hours - f32(int(hours))
+
+    h = whole
+    m = f32(int(decimal * 60))
+    s = ((decimal * 60) - m) * 60
+    return h, m, s
+}
+
+hms_to_hours :: proc(h, m, s: f32) -> (hours: f32) {
+    return h + m/60 + s/3600
+}
+
+goto_hour :: proc(using cam: ^rl.Camera2D, hour: int) {
+    target.x = 0
+    target.x += f32(hour) * HOUR_RECT_W
+}
+
+goto_current_hour :: proc(using cam: ^rl.Camera2D) {
+    goto_hour(cam, int(clock))
+}
+
 get_current_hour :: proc() -> f32 {
     t := time.now()
     t = time.time_add(t, UTC_OFFSET*time.Hour)
     h, m, s := time.clock_from_time(t)
-    hours, minutes, seconds := f32(h), f32(m), f32(s)
-    return hours + minutes/60 + seconds/3600
+    return hms_to_hours(f32(h), f32(m), f32(s))
 }
 
 get_number_dimentions :: proc() -> (f32, f32) {
