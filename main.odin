@@ -2,52 +2,61 @@ package main
 
 import "core:fmt"
 import "core:math"
+import "core:strings"
 import "core:time"
-
 import rl "vendor:raylib"
 
-screen_w, screen_h: f32
-number_w, number_h: f32
-font: rl.Font
-clock: f32
-layer_h: f32
-dt: f32
+MouseCreateTimeSpan :: struct {start, end: f32, pressed: bool}
 
-// UTC-5 in my case
-UTC_OFFSET :: -5
+TimeBlock :: struct {
+    start, duration: f32,
+    text: strings.Builder,
+    layer: int,
+}
+timeblocks: [dynamic]TimeBlock
+
+screen_w, screen_h: f32
+layer_w, layer_h: f32
+number_w, number_h: f32
+mousetime: MouseCreateTimeSpan
+clock: f32
+dt: f32
+font: rl.Font
+cam: rl.Camera2D
 
 FONTSIZE :: 24
 CLOCKSIZE :: 10
-HOUR_RECT_W :: 450
+HOUR_RECT_W :: 850
 HOUR_RECT_H :: 50
-WINDOW_PADDING_X :: 0
-WINDOW_PADDING_Y :: 0
 N_LAYERS :: 4
+UTC_OFFSET :: -5
 
 main :: proc() {
-    initial_screen_w: i32 = 2 * HOUR_RECT_W + WINDOW_PADDING_X
-    initial_screen_h: i32 = (HOUR_RECT_H + CLOCKSIZE) * N_LAYERS + WINDOW_PADDING_Y
+    initial_screen_w: i32 = 1 * HOUR_RECT_W
+    initial_screen_h: i32 = (HOUR_RECT_H + CLOCKSIZE) * N_LAYERS
     rl.InitWindow(initial_screen_w, initial_screen_h, "timealloc")
     
     rl.SetWindowState({.WINDOW_RESIZABLE})
     defer rl.CloseWindow()
 
-    cam := rl.Camera2D{}
     cam.zoom = 1.0
     
     font = rl.LoadFontEx("assets/Inter-Regular.ttf", FONTSIZE, nil, 0)
     number_w, number_h = get_number_dimentions()
+    layer_w, layer_h = get_layer_dimentions()
     
     initial_screen_w += i32(number_w)
     initial_screen_h += i32(number_h * N_LAYERS)
     rl.SetWindowSize(initial_screen_w, initial_screen_h)
 
+    append(&timeblocks, TimeBlock{0.5, 1, strings.builder_make(), 0})
+    strings.write_string(&timeblocks[0].text, "sample text")
+    strings.write_byte(&timeblocks[0].text, 0)
+
     for !rl.WindowShouldClose() {
         dt = rl.GetFrameTime()
-        screen_w = cast(f32)rl.GetScreenWidth()
-        screen_h = cast(f32)rl.GetScreenHeight()
-
-        layer_h = HOUR_RECT_H + CLOCKSIZE + number_h
+        screen_w = auto_cast rl.GetScreenWidth()
+        screen_h = auto_cast rl.GetScreenHeight()
         clock = get_current_hour()
 
         center_offset := rl.Vector2{0, 0}
@@ -58,13 +67,13 @@ main :: proc() {
             cam.target.x += mv * HOUR_RECT_W * 0.25
         }
         if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.H) {
-            goto_current_hour(&cam)
+            goto_hour(auto_cast clock)
         }
         if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.A) {
-            goto_hour(&cam, 0)
+            goto_hour(0)
         }
         if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.E) {
-            goto_hour(&cam, 23)
+            goto_hour(23)
         }
         cam.target.x = clamp(cam.target.x, 0, 24*HOUR_RECT_W)
 
@@ -80,11 +89,53 @@ main :: proc() {
         
         rl.BeginMode2D(cam)
 
+	// Getting the mouse layer
+	mpos := rl.GetMousePosition()
+	mpos_world := rl.GetScreenToWorld2D(mpos, cam)
+	mlayer := get_mouse_layer(mpos, center_offset)
+	on_hour_block := is_mouse_on_hour_block(mpos_world.x, mlayer)
+	if on_hour_block {
+	    t := f32(HOUR_RECT_W / 60)
+	    pos := t * math.floor(mpos_world.x / t)
+	    if rl.IsMouseButtonPressed(.LEFT) {
+	    }
+	    if rl.IsMouseButtonReleased(.LEFT) {
+	    }
+	    rl.DrawCircleV(rl.Vector2{pos, mpos.y}, 5, rl.RED)
+	}
+	
         for i in 0..<N_LAYERS {
             render_clock(i, center_offset)
             render_layer(i, center_offset)
         }
+
         rl.EndMode2D()
+
+	// Drawing time blocks textboxes
+	for _, i in timeblocks {
+	    text := timeblock_cstring(&timeblocks[i])
+	    _, text_h := get_text_dimentions(text)
+
+	    start := timeblocks[i].start
+	    duration := timeblocks[i].duration
+	    layer := timeblocks[i].layer
+
+	    rect_pos := rl.Vector2{
+		number_w + start * HOUR_RECT_W,
+		number_h + CLOCKSIZE + layer_h * f32(layer),
+	    }
+	    rect_pos += center_offset - cam.target
+
+	    rect := rl.Rectangle{
+		rect_pos.x, rect_pos.y,
+		duration * HOUR_RECT_W, HOUR_RECT_H
+	    }
+	    rl.DrawRectangleRounded(rect, .25, 10, rl.RED)
+
+	    pos: rl.Vector2 = rect_pos + {rect.width/2, rect.height/2}
+	    render_text_centered(text, pos)
+	}
+
         rl.EndDrawing()
     }
 }
@@ -111,23 +162,39 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
         rect_pos += offset
         
         rect := rl.Rectangle{rect_pos.x, rect_pos.y, HOUR_RECT_W, HOUR_RECT_H}
-        h, s, v: f32
-        x := hour / 23
+        h, s, v, a: f32
 
         // Dynamically getting the color value based on the hour.
+	x := hour / 23
         {
             using math
-            h = (sin(PI*x - PI/2)*.5 + .5) * 180
-            s = .8 + sin(x)*.2 
-            v = sin(2*PI*x - PI/2)*.4 + .5
+            h = (sin(PI*x - PI/2)*.5 + .5) * (280 - 150) + 150 // From 150 to 280
+            s = cos(2*PI*x)*.25 + .75
+            v = cos(2*PI*x - PI)*.35 + .65
+            a = cos(2*PI*x - PI)*.25 + .75
         }
-        rl.DrawRectangleRounded(rect, 0.4, 10, rl.ColorFromHSV(h, s, v))
+        color := rl.ColorAlpha(rl.ColorFromHSV(h, s, v), a)
+        rl.DrawRectangleRounded(rect, 0.25, 10, color)
 
-        // Draw black line to make it look like it has padding.
+        // Padding for the cursor background.
+        {
+            thick :: 4
+            start := rect_pos - {0, number_h + CLOCKSIZE}
+            end := start + {0, CLOCKSIZE}
+            rl.DrawLineEx(start, end, thick, rl.BLACK)
+            
+            if hour == 23 {
+                start += {HOUR_RECT_W, 0}
+                end := start + {0, CLOCKSIZE}
+                rl.DrawLineEx(start, end, thick, rl.BLACK)
+            }
+        }
+
+        // Padding between the hours.
         {
             thick :: 2
-            start := rect_pos - {0, number_h + CLOCKSIZE}
-            end := rect_pos + {0, layer_h * f32(layer + 1)}
+            start := rect_pos
+            end := start + {0, HOUR_RECT_H}
             rl.DrawLineEx(start, end, thick, rl.BLACK)
         }
         
@@ -157,45 +224,4 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
             rl.DrawLineEx(start, end, 1, {255, 255, 255, 150})
         }
     }
-}
-
-hours_to_hms :: proc(hours: f32) -> (h, m, s: f32) {
-    whole := f32(int(hours))
-    decimal := hours - f32(int(hours))
-
-    h = whole
-    m = f32(int(decimal * 60))
-    s = ((decimal * 60) - m) * 60
-    return h, m, s
-}
-
-hms_to_hours :: proc(h, m, s: f32) -> (hours: f32) {
-    return h + m/60 + s/3600
-}
-
-goto_hour :: proc(using cam: ^rl.Camera2D, hour: int) {
-    target.x = 0
-    target.x += f32(hour) * HOUR_RECT_W
-}
-
-goto_current_hour :: proc(using cam: ^rl.Camera2D) {
-    goto_hour(cam, int(clock))
-}
-
-get_current_hour :: proc() -> f32 {
-    t := time.now()
-    t = time.time_add(t, UTC_OFFSET*time.Hour)
-    h, m, s := time.clock_from_time(t)
-    return hms_to_hours(f32(h), f32(m), f32(s))
-}
-
-get_number_dimentions :: proc() -> (f32, f32) {
-    measure := rl.MeasureTextEx(font, "0", FONTSIZE, 0)
-    return measure.x, measure.y
-} 
-
-render_text_centered :: proc(text: cstring, pos: rl.Vector2, color := rl.WHITE) {
-    spacing :: 0
-    measure := rl.MeasureTextEx(font, text, FONTSIZE, spacing)
-    rl.DrawTextEx(font, text, pos - measure/2, FONTSIZE, spacing, color)
 }
