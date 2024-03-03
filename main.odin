@@ -6,7 +6,7 @@ import "core:strings"
 import "core:time"
 import rl "vendor:raylib"
 
-MouseTimeSpan :: struct {start, end: f32}
+MouseTimeSpan :: struct {start, end: f32, registering: bool}
 
 TimeBlock :: struct {
     start, duration: f32,
@@ -48,8 +48,7 @@ main :: proc() {
     initial_screen_h += i32(number_h * N_LAYERS)
     rl.SetWindowSize(initial_screen_w, initial_screen_h)
     
-    append_timeblock(0, .5, 1)
-    fmt.println(timeblocks)
+    append_timeblock(layer=0, start=.5, duration=1)
     strings.write_string(&timeblocks[0][0].text, "sample text")
     strings.write_byte(&timeblocks[0][0].text, 0)
 
@@ -59,12 +58,12 @@ main :: proc() {
         screen_h = auto_cast rl.GetScreenHeight()
         clock = get_current_hour()
 
-        center_offset := rl.Vector2{0, 0}
+        center_offset: rl.Vector2
         if screen_h > N_LAYERS*layer_h do center_offset.y = screen_h/2 - N_LAYERS*layer_h/2
 
         // Moving the camera
         if mv := rl.GetMouseWheelMove(); mv != 0 {
-            cam.target.x += mv * HOUR_RECT_W * 0.25
+            cam.target.x  += mv * HOUR_RECT_W * 0.25
         }
         if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.H) {
             goto_hour(auto_cast clock)
@@ -77,6 +76,46 @@ main :: proc() {
         }
         cam.target.x = clamp(cam.target.x, 0, 24*HOUR_RECT_W)
 
+    	// Mouse interaction
+    	mpos := rl.GetMousePosition()
+    	mpos_world := rl.GetScreenToWorld2D(mpos, cam)
+    	mlayer := get_mouse_layer(mpos, center_offset)
+    	mouse_on_hour_block := is_mouse_on_hour_block(mpos_world.x, mlayer)
+    	
+    	if mouse_on_hour_block {
+    	    // snapping the mouse position to minutes
+    	    x := mpos_world.x - number_w
+    	    t := f32(HOUR_RECT_W / 60)
+    	    pos := t * math.floor(x / t)
+    	    
+    	    if rl.IsMouseButtonPressed(.LEFT) {
+    	       mousetime.start = math.ceil(60*pos / HOUR_RECT_W)
+    	       
+    	       collided := get_collided_timeblock(mlayer, mpos, center_offset, 0)
+    	       mousetime.registering = (collided == -1)
+    	    }
+    	    if rl.IsMouseButtonReleased(.LEFT) {
+    	       mousetime.end = math.ceil(60*pos / HOUR_RECT_W)
+        	   
+       	       collided := get_collided_timeblock(mlayer, mpos, center_offset, 0)
+    	       if mousetime.registering do mousetime.registering = (collided == -1)
+        	   
+        	   if mousetime.start != mousetime.end && mousetime.registering {
+        	       {
+        	           using mousetime
+        	           if start > end do start, end = end, start
+        	       }
+        	       
+        	       start := mousetime.start / 60
+        	       duration := (mousetime.end - mousetime.start) / 60
+        	       append_timeblock(mlayer, start, duration)
+        	       last := len(timeblocks[mlayer]) - 1
+        	       strings.write_string(&timeblocks[mlayer][last].text, "sample text")
+                   strings.write_byte(&timeblocks[mlayer][last].text, 0)
+        	   }
+    	    }
+    	}
+
         rl.ClearBackground(rl.BLACK)
         rl.BeginDrawing()
 
@@ -88,36 +127,6 @@ main :: proc() {
         }
         
         rl.BeginMode2D(cam)
-
-    	// Getting the mouse layer
-    	mpos := rl.GetMousePosition()
-    	mpos_world := rl.GetScreenToWorld2D(mpos, cam)
-    	mlayer := get_mouse_layer(mpos, center_offset)
-    	on_hour_block := is_mouse_on_hour_block(mpos_world.x, mlayer)
-    	if on_hour_block {
-    	    x := mpos_world.x - number_w
-    	    t := f32(HOUR_RECT_W / 60)
-    	    pos := t * math.floor(x / t)
-    	    if rl.IsMouseButtonPressed(.LEFT) {
-    	       mousetime.start = math.ceil(60*pos / HOUR_RECT_W)
-    	    }
-    	    if rl.IsMouseButtonReleased(.LEFT) {
-    	       mousetime.end = math.ceil(60*pos / HOUR_RECT_W)
-        	   
-        	   if mousetime.start != mousetime.end {
-        	       {
-        	           using mousetime
-        	           if start > end do start, end = end, start
-        	       }
-        	       start := mousetime.start / 60
-        	       duration := (mousetime.end - mousetime.start) / 60
-        	       append_timeblock(mlayer, start, duration)
-        	       last := len(timeblocks[mlayer]) - 1
-        	       strings.write_string(&timeblocks[mlayer][last].text, "sample text")
-                   strings.write_byte(&timeblocks[mlayer][last].text, 0)
-        	   }
-    	    }
-    	}
 	
         for i in 0..<N_LAYERS {
             render_clock(i, center_offset)
@@ -135,7 +144,7 @@ main :: proc() {
     }
 }
 
-render_clock :: proc(layer: int, offset := rl.Vector2{0, 0}) {
+render_clock :: proc(layer: int, offset: rl.Vector2) {
     pos := rl.Vector2{clock * HOUR_RECT_W + number_w, layer_h * f32(layer)}
 
     if layer == 0 do rl.DrawLineV({pos.x, 0}, {pos.x, screen_h}, {255, 255, 255, 100})
@@ -147,9 +156,9 @@ render_clock :: proc(layer: int, offset := rl.Vector2{0, 0}) {
     rl.DrawTriangle(v1, v2, v3, rl.GREEN)
 }
 
-render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
-    for hour: f32; hour < 24; hour += 1 {
-
+render_layer :: proc(layer: int, offset: rl.Vector2) {
+    for hour in f32(0)..<24 {
+    
         rect_pos := rl.Vector2{
             HOUR_RECT_W * hour + number_w,
             (number_h + CLOCKSIZE) * f32(layer + 1) + HOUR_RECT_H * f32(layer),
@@ -221,29 +230,46 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
     }
 }
 
-render_timeblocks :: proc(layer: int, offset := rl.Vector2{0, 0}) {
+render_timeblocks :: proc(layer: int, offset: rl.Vector2) {
 	for _, i in timeblocks[layer] {
 	    text := timeblock_cstring(&timeblocks[layer][i])
 	    _, text_h := get_text_dimentions(text)
 
-	    start := timeblocks[layer][i].start
-	    duration := timeblocks[layer][i].duration
-	    
-	    empty_space: f32 = HOUR_RECT_H/4
-
-	    rect_pos := rl.Vector2{
-    		number_w + start * HOUR_RECT_W,
-    		number_h + CLOCKSIZE + layer_h * f32(layer) + empty_space,
-	    }
-	    rect_pos += offset - cam.target
-
-	    rect := rl.Rectangle{
-    		rect_pos.x, rect_pos.y,
-    		duration * HOUR_RECT_W, HOUR_RECT_H - 2*empty_space
-	    }
+	    rect := get_timeblock_rect(layer, i, offset, HOUR_RECT_H/4)
 	    rl.DrawRectangleRounded(rect, .25, 50, {13, 13, 13, 200})
 
-	    pos: rl.Vector2 = rect_pos + {rect.width/2, rect.height/2}
+	    pos := rl.Vector2{rect.x + rect.width/2, rect.y + rect.height/2}
 	    render_text_centered(text, pos)
 	}
+}
+
+get_timeblock_rect :: proc(layer, i: int, offset: rl.Vector2, empty_space: f32) -> rl.Rectangle {
+    start := timeblocks[layer][i].start
+    duration := timeblocks[layer][i].duration
+
+    rect_pos := rl.Vector2{
+		number_w + start * HOUR_RECT_W,
+		number_h + CLOCKSIZE + layer_h * f32(layer) + empty_space,
+    }
+    rect_pos += offset - cam.target
+
+    rect := rl.Rectangle{
+		rect_pos.x,
+		rect_pos.y,
+		duration * HOUR_RECT_W,
+		HOUR_RECT_H - 2*empty_space
+    }
+    return rect
+}
+
+get_collided_timeblock :: proc(layer: int, pos, offset: rl.Vector2, empty_space: f32) -> int {
+    collided := -1
+    for _, i in timeblocks[layer] {
+       rect := get_timeblock_rect(layer, i, offset, empty_space)
+       if rl.CheckCollisionPointRec(pos, rect) {
+           collided = i
+           break
+       }
+    }
+    return collided
 }

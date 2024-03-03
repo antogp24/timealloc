@@ -62,23 +62,17 @@ render_text_centered :: proc(text: cstring, pos: rl.Vector2, color := rl.WHITE) 
     rl.DrawTextEx(font, text, pos - measure/2, FONTSIZE, spacing, color)
 }
 
-get_mouse_layer :: proc(mpos: rl.Vector2, offset := rl.Vector2{0, 0}) -> int {
+get_mouse_layer :: proc(mpos, offset: rl.Vector2) -> int {
     mlayer := -1
-    layer_y: [4]f32
-    {
-	layer_y[0] = (number_h + CLOCKSIZE) * 1 + HOUR_RECT_H * 0 + offset.y
-	layer_y[1] = (number_h + CLOCKSIZE) * 2 + HOUR_RECT_H * 1 + offset.y
-	layer_y[2] = (number_h + CLOCKSIZE) * 3 + HOUR_RECT_H * 2 + offset.y
-	layer_y[3] = (number_h + CLOCKSIZE) * 4 + HOUR_RECT_H * 3 + offset.y
+    layer_y: [N_LAYERS]f32
+    for i in 0..<N_LAYERS {
+    	layer_y[i] = (number_h + CLOCKSIZE) * f32(i + 1) + HOUR_RECT_H * f32(i) + offset.y
     }
-    if mpos.y >= layer_y[0] && mpos.y <= layer_y[0] + HOUR_RECT_H {
-	mlayer = 0
-    } else if mpos.y >= layer_y[1] && mpos.y <= layer_y[1] + HOUR_RECT_H {
-	mlayer = 1
-    } else if mpos.y >= layer_y[2] && mpos.y <= layer_y[2] + HOUR_RECT_H {
-	mlayer = 2
-    } else if mpos.y >= layer_y[3] && mpos.y <= layer_y[3] + HOUR_RECT_H {
-	mlayer = 3
+    for i in 0..<N_LAYERS {
+        if mpos.y >= layer_y[i] && mpos.y <= layer_y[i] + HOUR_RECT_H {
+        	mlayer = i
+        	break
+        }
     }
     return mlayer
 }
