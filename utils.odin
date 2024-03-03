@@ -2,7 +2,12 @@ package main
 
 import "core:fmt"
 import "core:time"
+import "core:strings"
 import rl "vendor:raylib"
+
+append_timeblock :: proc(layer: int, start, duration: f32) {
+    append(&timeblocks[layer], TimeBlock{start, duration, strings.builder_make()})
+}
 
 hours_to_hms :: proc(hours: f32) -> (h, m, s: f32) {
     whole := f32(int(hours))

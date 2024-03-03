@@ -6,33 +6,32 @@ import "core:strings"
 import "core:time"
 import rl "vendor:raylib"
 
-MouseCreateTimeSpan :: struct {start, end: f32, pressed: bool}
+MouseTimeSpan :: struct {start, end: f32}
 
 TimeBlock :: struct {
     start, duration: f32,
     text: strings.Builder,
-    layer: int,
 }
-timeblocks: [dynamic]TimeBlock
-
-screen_w, screen_h: f32
-layer_w, layer_h: f32
-number_w, number_h: f32
-mousetime: MouseCreateTimeSpan
-clock: f32
-dt: f32
-font: rl.Font
-cam: rl.Camera2D
 
 FONTSIZE :: 24
 CLOCKSIZE :: 10
-HOUR_RECT_W :: 850
+HOUR_RECT_W :: 500
 HOUR_RECT_H :: 50
 N_LAYERS :: 4
 UTC_OFFSET :: -5
 
+screen_w, screen_h: f32
+layer_w, layer_h: f32
+number_w, number_h: f32
+timeblocks: [N_LAYERS][dynamic]TimeBlock
+mousetime: MouseTimeSpan
+clock: f32
+font: rl.Font
+cam: rl.Camera2D
+dt: f32
+
 main :: proc() {
-    initial_screen_w: i32 = 1 * HOUR_RECT_W
+    initial_screen_w: i32 = 2 * HOUR_RECT_W
     initial_screen_h: i32 = (HOUR_RECT_H + CLOCKSIZE) * N_LAYERS
     rl.InitWindow(initial_screen_w, initial_screen_h, "timealloc")
     
@@ -48,10 +47,11 @@ main :: proc() {
     initial_screen_w += i32(number_w)
     initial_screen_h += i32(number_h * N_LAYERS)
     rl.SetWindowSize(initial_screen_w, initial_screen_h)
-
-    append(&timeblocks, TimeBlock{0.5, 1, strings.builder_make(), 0})
-    strings.write_string(&timeblocks[0].text, "sample text")
-    strings.write_byte(&timeblocks[0].text, 0)
+    
+    append_timeblock(0, .5, 1)
+    fmt.println(timeblocks)
+    strings.write_string(&timeblocks[0][0].text, "sample text")
+    strings.write_byte(&timeblocks[0][0].text, 0)
 
     for !rl.WindowShouldClose() {
         dt = rl.GetFrameTime()
@@ -89,20 +89,35 @@ main :: proc() {
         
         rl.BeginMode2D(cam)
 
-	// Getting the mouse layer
-	mpos := rl.GetMousePosition()
-	mpos_world := rl.GetScreenToWorld2D(mpos, cam)
-	mlayer := get_mouse_layer(mpos, center_offset)
-	on_hour_block := is_mouse_on_hour_block(mpos_world.x, mlayer)
-	if on_hour_block {
-	    t := f32(HOUR_RECT_W / 60)
-	    pos := t * math.floor(mpos_world.x / t)
-	    if rl.IsMouseButtonPressed(.LEFT) {
-	    }
-	    if rl.IsMouseButtonReleased(.LEFT) {
-	    }
-	    rl.DrawCircleV(rl.Vector2{pos, mpos.y}, 5, rl.RED)
-	}
+    	// Getting the mouse layer
+    	mpos := rl.GetMousePosition()
+    	mpos_world := rl.GetScreenToWorld2D(mpos, cam)
+    	mlayer := get_mouse_layer(mpos, center_offset)
+    	on_hour_block := is_mouse_on_hour_block(mpos_world.x, mlayer)
+    	if on_hour_block {
+    	    x := mpos_world.x - number_w
+    	    t := f32(HOUR_RECT_W / 60)
+    	    pos := t * math.floor(x / t)
+    	    if rl.IsMouseButtonPressed(.LEFT) {
+    	       mousetime.start = math.ceil(60*pos / HOUR_RECT_W)
+    	    }
+    	    if rl.IsMouseButtonReleased(.LEFT) {
+    	       mousetime.end = math.ceil(60*pos / HOUR_RECT_W)
+        	   
+        	   if mousetime.start != mousetime.end {
+        	       {
+        	           using mousetime
+        	           if start > end do start, end = end, start
+        	       }
+        	       start := mousetime.start / 60
+        	       duration := (mousetime.end - mousetime.start) / 60
+        	       append_timeblock(mlayer, start, duration)
+        	       last := len(timeblocks[mlayer]) - 1
+        	       strings.write_string(&timeblocks[mlayer][last].text, "sample text")
+                   strings.write_byte(&timeblocks[mlayer][last].text, 0)
+        	   }
+    	    }
+    	}
 	
         for i in 0..<N_LAYERS {
             render_clock(i, center_offset)
@@ -111,30 +126,10 @@ main :: proc() {
 
         rl.EndMode2D()
 
-	// Drawing time blocks textboxes
-	for _, i in timeblocks {
-	    text := timeblock_cstring(&timeblocks[i])
-	    _, text_h := get_text_dimentions(text)
-
-	    start := timeblocks[i].start
-	    duration := timeblocks[i].duration
-	    layer := timeblocks[i].layer
-
-	    rect_pos := rl.Vector2{
-		number_w + start * HOUR_RECT_W,
-		number_h + CLOCKSIZE + layer_h * f32(layer),
-	    }
-	    rect_pos += center_offset - cam.target
-
-	    rect := rl.Rectangle{
-		rect_pos.x, rect_pos.y,
-		duration * HOUR_RECT_W, HOUR_RECT_H
-	    }
-	    rl.DrawRectangleRounded(rect, .25, 10, rl.RED)
-
-	    pos: rl.Vector2 = rect_pos + {rect.width/2, rect.height/2}
-	    render_text_centered(text, pos)
-	}
+    	// Drawing time blocks textboxes
+    	for i in 0..<N_LAYERS {
+        	render_timeblocks(i, center_offset)
+    	}
 
         rl.EndDrawing()
     }
@@ -165,13 +160,13 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
         h, s, v, a: f32
 
         // Dynamically getting the color value based on the hour.
-	x := hour / 23
+	    x := hour / 23
         {
             using math
             h = (sin(PI*x - PI/2)*.5 + .5) * (280 - 150) + 150 // From 150 to 280
             s = cos(2*PI*x)*.25 + .75
             v = cos(2*PI*x - PI)*.35 + .65
-            a = cos(2*PI*x - PI)*.25 + .75
+            a = cos(2*PI*x - PI)*.20 + .80
         }
         color := rl.ColorAlpha(rl.ColorFromHSV(h, s, v), a)
         rl.DrawRectangleRounded(rect, 0.25, 10, color)
@@ -218,10 +213,37 @@ render_layer :: proc(layer: int, offset := rl.Vector2{0, 0}) {
         }
         
         // Draw lines to indicate every one minute
-        for i in 1..=60 {
-            start := rect_pos + {0.0166667*f32(i)*HOUR_RECT_W, 0}
+        for i in 0..=60 {
+            start := rect_pos + {f32(i*HOUR_RECT_W)/60, 0}
             end := start - {0, number_h/4}
             rl.DrawLineEx(start, end, 1, {255, 255, 255, 150})
         }
     }
+}
+
+render_timeblocks :: proc(layer: int, offset := rl.Vector2{0, 0}) {
+	for _, i in timeblocks[layer] {
+	    text := timeblock_cstring(&timeblocks[layer][i])
+	    _, text_h := get_text_dimentions(text)
+
+	    start := timeblocks[layer][i].start
+	    duration := timeblocks[layer][i].duration
+	    
+	    empty_space: f32 = HOUR_RECT_H/4
+
+	    rect_pos := rl.Vector2{
+    		number_w + start * HOUR_RECT_W,
+    		number_h + CLOCKSIZE + layer_h * f32(layer) + empty_space,
+	    }
+	    rect_pos += offset - cam.target
+
+	    rect := rl.Rectangle{
+    		rect_pos.x, rect_pos.y,
+    		duration * HOUR_RECT_W, HOUR_RECT_H - 2*empty_space
+	    }
+	    rl.DrawRectangleRounded(rect, .25, 50, {13, 13, 13, 200})
+
+	    pos: rl.Vector2 = rect_pos + {rect.width/2, rect.height/2}
+	    render_text_centered(text, pos)
+	}
 }
