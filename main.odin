@@ -7,10 +7,12 @@ import "core:time"
 import rl "vendor:raylib"
 
 MouseTimeSpan :: struct {start, end: f32, registering: bool}
+ActiveTimeBlock :: struct {layer, block: int}
 
 TimeBlock :: struct {
     start, duration: f32,
     text: strings.Builder,
+    cursor: int,
 }
 
 FONTSIZE :: 24
@@ -24,20 +26,31 @@ screen_w, screen_h: f32
 layer_w, layer_h: f32
 number_w, number_h: f32
 timeblocks: [N_LAYERS][dynamic]TimeBlock
+active := ActiveTimeBlock{-1, -1}
 mousetime: MouseTimeSpan
 clock: f32
 font: rl.Font
 cam: rl.Camera2D
+elapsedtime: f64
 dt: f32
+
+keytimers := map[rl.KeyboardKey]f32 {
+    .BACKSPACE = 0.0,
+    .ENTER     = 0.0,
+    .UP        = 0.0,
+    .DOWN      = 0.0,
+    .LEFT      = 0.0,
+    .RIGHT     = 0.0,
+}
 
 main :: proc() {
     initial_screen_w: i32 = 2 * HOUR_RECT_W
     initial_screen_h: i32 = (HOUR_RECT_H + CLOCKSIZE) * N_LAYERS
     rl.InitWindow(initial_screen_w, initial_screen_h, "timealloc")
-    
-    rl.SetWindowState({.WINDOW_RESIZABLE})
     defer rl.CloseWindow()
 
+    rl.SetWindowState({.WINDOW_RESIZABLE})
+    rl.SetExitKey(.KEY_NULL)
     cam.zoom = 1.0
     
     font = rl.LoadFontEx("assets/Inter-Regular.ttf", FONTSIZE, nil, 0)
@@ -53,20 +66,24 @@ main :: proc() {
     strings.write_byte(&timeblocks[0][0].text, 0)
 
     for !rl.WindowShouldClose() {
+        elapsedtime = rl.GetTime()
         dt = rl.GetFrameTime()
-        screen_w = auto_cast rl.GetScreenWidth()
-        screen_h = auto_cast rl.GetScreenHeight()
+        screen_w = cast(f32) rl.GetScreenWidth()
+        screen_h = cast(f32) rl.GetScreenHeight()
         clock = get_current_hour()
+        
+        for key in keytimers {
+            timer_update(key)
+        }
 
         center_offset: rl.Vector2
-        if screen_h > N_LAYERS*layer_h do center_offset.y = screen_h/2 - N_LAYERS*layer_h/2
+        if screen_h > N_LAYERS*layer_h {
+            center_offset.y = screen_h/2 - N_LAYERS*layer_h/2
+        }
 
         // Moving the camera
         if mv := rl.GetMouseWheelMove(); mv != 0 {
             cam.target.x  += mv * HOUR_RECT_W * 0.25
-        }
-        if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.H) {
-            goto_hour(auto_cast clock)
         }
         if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.A) {
             goto_hour(0)
@@ -74,13 +91,27 @@ main :: proc() {
         if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.E) {
             goto_hour(23)
         }
+        if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyDown(.D) {
+            goto_hour(auto_cast clock)
+        }
         cam.target.x = clamp(cam.target.x, 0, 24*HOUR_RECT_W)
-
+        
+        if rl.IsKeyPressed(.ESCAPE) {
+            reset_all_active_timeblocks()
+        }
+        // Typing in the textboxes
+        if active.layer != -1 && active.block != -1 {
+        }
+        
     	// Mouse interaction
     	mpos := rl.GetMousePosition()
     	mpos_world := rl.GetScreenToWorld2D(mpos, cam)
     	mlayer := get_mouse_layer(mpos, center_offset)
     	mouse_on_hour_block := is_mouse_on_hour_block(mpos_world.x, mlayer)
+        
+        if rl.IsMouseButtonPressed(.LEFT) && !mouse_on_hour_block {
+            reset_all_active_timeblocks()
+        }    	
     	
     	if mouse_on_hour_block {
     	    // snapping the mouse position to minutes
@@ -93,25 +124,34 @@ main :: proc() {
     	       
     	       collided := get_collided_timeblock(mlayer, mpos, center_offset, 0)
     	       mousetime.registering = (collided == -1)
-    	    }
-    	    if rl.IsMouseButtonReleased(.LEFT) {
+    	       reset_all_active_timeblocks()
+    	       
+    	    } else if rl.IsMouseButtonReleased(.LEFT) {
     	       mousetime.end = math.ceil(60*pos / HOUR_RECT_W)
         	   
        	       collided := get_collided_timeblock(mlayer, mpos, center_offset, 0)
     	       if mousetime.registering do mousetime.registering = (collided == -1)
         	   
         	   if mousetime.start != mousetime.end && mousetime.registering {
-        	       {
+        	       // Swapping if needed.
+        	       if mousetime.start > mousetime.end {
         	           using mousetime
-        	           if start > end do start, end = end, start
+        	           start, end = end, start
         	       }
         	       
         	       start := mousetime.start / 60
         	       duration := (mousetime.end - mousetime.start) / 60
         	       append_timeblock(mlayer, start, duration)
-        	       last := len(timeblocks[mlayer]) - 1
+        	       last  := len(timeblocks[mlayer]) - 1
         	       strings.write_string(&timeblocks[mlayer][last].text, "sample text")
                    strings.write_byte(&timeblocks[mlayer][last].text, 0)
+                   
+                   active.layer = mlayer
+                   active.block = last
+                   
+        	   } else if collided != -1 {
+        	       active.layer = mlayer
+        	       active.block = collided
         	   }
     	    }
     	}
@@ -120,24 +160,24 @@ main :: proc() {
         rl.BeginDrawing()
 
         // Cursor HUD background
-        for i in 0..<N_LAYERS {
-            color := rl.Color{35, 35, 85, 255}
-            pos := rl.Vector2{0, f32(i) * layer_h} + center_offset
+        for layer in 0..<N_LAYERS {
+            color: rl.Color = {45, 135, 45, 255} if layer == active.layer else {35, 35, 85, 255}
+            pos := rl.Vector2{0, f32(layer) * layer_h} + center_offset
             rl.DrawRectangleV(pos, {screen_w, CLOCKSIZE}, color)
         }
         
         rl.BeginMode2D(cam)
 	
-        for i in 0..<N_LAYERS {
-            render_clock(i, center_offset)
-            render_layer(i, center_offset)
+        for layer in 0..<N_LAYERS {
+            render_clock(layer, center_offset)
+            render_layer(layer, center_offset)
         }
 
         rl.EndMode2D()
 
     	// Drawing time blocks textboxes
-    	for i in 0..<N_LAYERS {
-        	render_timeblocks(i, center_offset)
+    	for layer in 0..<N_LAYERS {
+        	render_timeblocks(layer, center_offset)
     	}
 
         rl.EndDrawing()
@@ -233,13 +273,31 @@ render_layer :: proc(layer: int, offset: rl.Vector2) {
 render_timeblocks :: proc(layer: int, offset: rl.Vector2) {
 	for _, i in timeblocks[layer] {
 	    text := timeblock_cstring(&timeblocks[layer][i])
-	    _, text_h := get_text_dimentions(text)
-
+	    text_w, text_h := get_text_dimentions(text)
+	    
+	    is_active := (active.block == i && active.layer == layer)
+	    cursor := timeblocks[layer][i].cursor
+	    
+	    color: rl.Color = {13, 13, 200, 200} if is_active else {13, 13, 13, 200}
+        
 	    rect := get_timeblock_rect(layer, i, offset, HOUR_RECT_H/4)
-	    rl.DrawRectangleRounded(rect, .25, 50, {13, 13, 13, 200})
+	    rl.DrawRectangleRounded(rect, .25, 50, color)
 
-	    pos := rl.Vector2{rect.x + rect.width/2, rect.y + rect.height/2}
-	    render_text_centered(text, pos)
+	    rect_center := rl.Vector2{rect.x + rect.width/2, rect.y + rect.height/2}
+	    render_text_centered(text, rect_center)
+	    
+	    if is_active {
+	       offset := get_text_offset(text, cursor)
+	       cursor_pos: rl.Vector2 = rect_center + {offset - text_w/2, 0}
+	       cursor_h := rect.height - 10
+	       
+	       start: rl.Vector2 = cursor_pos - {0, cursor_h/2}
+	       end:   rl.Vector2 = cursor_pos + {0, cursor_h/2}
+	       
+	       // Blinking cursor
+	       alpha := f32(math.cos(math.PI*f32(elapsedtime)) + 1) / 2
+	       rl.DrawLineEx(start, end, 2, rl.ColorAlpha(rl.GREEN, alpha)) 
+	    }
 	}
 }
 
@@ -272,4 +330,9 @@ get_collided_timeblock :: proc(layer: int, pos, offset: rl.Vector2, empty_space:
        }
     }
     return collided
+}
+
+reset_all_active_timeblocks :: proc() {
+    active.layer = -1
+    active.block = -1
 }
