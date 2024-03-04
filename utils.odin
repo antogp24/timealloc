@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:time"
 import "core:math"
 import "core:strings"
+
 import rl "vendor:raylib"
 
 append_timeblock :: proc(layer: int, start, duration: f32) {
@@ -42,14 +43,14 @@ get_text_offset :: proc(text: cstring, cursor: int) -> (offset: f32) {
         if ctext[i] == 0 do break
 
         next: i32
-        letter := rl.GetCodepointNext(auto_cast &ctext[i], &next)
+        letter := rl.GetCodepointNext(cast(cstring)&ctext[i], &next)
         index := rl.GetGlyphIndex(font, letter)
         i += int(next);
 
         if font.chars[index].advanceX != 0 {
-            offset += auto_cast font.chars[index].advanceX
+            offset += cast(f32)font.chars[index].advanceX
         } else {
-            offset += font.recs[index].width + auto_cast font.chars[index].offsetX
+            offset += font.recs[index].width + cast(f32)font.chars[index].offsetX
         }
     }
     return offset
@@ -59,13 +60,12 @@ goto_hour :: proc(hour: int) {
     cam.target.x = f32(hour) * HOUR_RECT_W
 }
 
-square_wave :: proc (x, period: f32) -> bool {
-    using math
-    result := -floor(sin(x * PI / period))
+square_wave :: proc(x, period: f32) -> bool {
+    result := -math.floor(math.sin(x * math.PI / period))
     return bool(int(result))
 }
 
-timer_update :: proc(key: rl.KeyboardKey) {
+timer_update :: proc(key: rl.KeyboardKey, dt: f32) {
     if rl.IsKeyDown(key) {
         keytimers[key] += dt
     } else {
@@ -74,7 +74,8 @@ timer_update :: proc(key: rl.KeyboardKey) {
 }
 
 key_is_pressed_or_down :: proc(pressed, key: rl.KeyboardKey, threshold: f32 = 0.3) -> bool {
-    return pressed == key || (keytimers[key] > threshold && square_wave(keytimers[key], 0.015))
+    timer := keytimers[key]
+    return pressed == key || (timer > threshold && square_wave(timer, 0.015))
 }
 
 get_current_hour :: proc() -> f32 {
@@ -112,11 +113,11 @@ get_mouse_layer :: proc(mpos, offset: rl.Vector2) -> int {
     mlayer := -1
     layer_y: [N_LAYERS]f32
     for i in 0..<N_LAYERS {
-    	layer_y[i] = (number_h + CLOCKSIZE) * f32(i + 1) + HOUR_RECT_H * f32(i) + offset.y
+        layer_y[i] = (number_h + CLOCKSIZE) * f32(i + 1) + HOUR_RECT_H * f32(i) + offset.y
 
         if mpos.y >= layer_y[i] && mpos.y <= layer_y[i] + HOUR_RECT_H {
-        	mlayer = i
-        	break
+                mlayer = i
+                break
         }
     }
     return mlayer
