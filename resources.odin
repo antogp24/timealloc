@@ -7,12 +7,14 @@ import rl "vendor:raylib"
 
 BAKE_RESOURCES :: true
 
-resource_load_font :: proc(path: cstring, fontsize: i32) -> (font: rl.Font) {
+resource_load_font :: proc($path: cstring, fontsize: i32) -> (font: rl.Font) {
     when BAKE_RESOURCES {
-	data :: #load("assets/Inter-Regular.ttf")
-	font = rl.LoadFontFromMemory(".ttf", raw_data(data), cast(i32)len(data), fontsize, nil, 0)
+	data :: #load(path)
+	size := cast(i32)len(data)
+	ext := rl.GetFileExtension(path)
+	font = rl.LoadFontFromMemory(ext, raw_data(data), size, fontsize, nil, 0)
     } else {
-	font = rl.LoadFontEx("assets/Inter-Regular.ttf", FONTSIZE, nil, 0)
+	font = rl.LoadFontEx(path, FONTSIZE, nil, 0)
     }
     return font
 }
