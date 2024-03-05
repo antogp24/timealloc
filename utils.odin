@@ -13,6 +13,8 @@ append_timeblock :: proc(layer: int, start, duration: f32) {
     t.duration = duration
     t.text = strings.builder_make()
     append(&timeblocks[layer], t)
+    last := len(timeblocks[layer]) - 1
+    strings.write_byte(&timeblocks[layer][last].text, 0)
 }
 
 hours_to_hms :: proc(hours: f32) -> (h, m, s: f32) {
@@ -31,29 +33,6 @@ hms_to_hours :: proc(h, m, s: f32) -> (hours: f32) {
 
 timeblock_cstring :: proc(using t: ^TimeBlock) -> cstring {
     return cstring(raw_data(text.buf[:]))
-}
-
-get_text_offset :: proc(text: cstring, cursor: int) -> (offset: f32) {
-    if font.texture.id == 0 || text == nil || cursor == 0 {
-        return 0
-    }
-    ctext := transmute([^]u8)text
-    
-    for i := 0; i < cursor; {
-        if ctext[i] == 0 do break
-
-        next: i32
-        letter := rl.GetCodepointNext(cast(cstring)&ctext[i], &next)
-        index := rl.GetGlyphIndex(font, letter)
-        i += int(next);
-
-        if font.chars[index].advanceX != 0 {
-            offset += cast(f32)font.chars[index].advanceX
-        } else {
-            offset += font.recs[index].width + cast(f32)font.chars[index].offsetX
-        }
-    }
-    return offset
 }
 
 goto_hour :: proc(hour: int) {
@@ -89,9 +68,30 @@ get_layer_dimentions :: proc() -> (f32, f32) {
     return 24*HOUR_RECT_W, HOUR_RECT_H + CLOCKSIZE + number_h
 }
 
-get_text_dimentions :: proc(text: cstring) -> (f32, f32) {
-    measure := rl.MeasureTextEx(font, text, FONTSIZE, 0)
-    return measure.x, measure.y
+get_text_dimentions :: proc(text: cstring, size: int, font := font, fontsize: f32 = FONTSIZE) -> (w, h: f32) {
+    size := size
+    if font.texture.id == 0 || text == nil do return
+
+    if size <= 0 do size = cast(int)rl.TextLength(text)
+    scaleFactor := fontsize / cast(f32)font.baseSize
+    ctext := transmute([^]u8)text
+    next: i32
+
+    for i := 0; i < size; i += int(next) {
+        letter := rl.GetCodepointNext(cast(cstring)&ctext[i], &next)
+        index := rl.GetGlyphIndex(font, letter)
+
+	if (font.chars[index].advanceX != 0) {
+	    w += cast(f32)font.chars[index].advanceX
+	} else {
+	    w += font.recs[index].width + cast(f32)font.chars[index].offsetX
+	}
+    }
+
+    w *= scaleFactor
+    h = fontsize
+
+    return w, h
 } 
 
 get_number_dimentions :: proc() -> (f32, f32) {
@@ -99,14 +99,58 @@ get_number_dimentions :: proc() -> (f32, f32) {
     return measure.x, measure.y
 } 
 
-render_text :: proc(text: cstring, pos: rl.Vector2, color := rl.WHITE) {
-    rl.DrawTextEx(font, text, pos, FONTSIZE, 0, color)
+get_text_offset :: proc(text: cstring, cursor: int) -> (offset: f32) {
+    if font.texture.id == 0 || text == nil || cursor == 0 {
+        return 0
+    }
+    ctext := transmute([^]u8)text
+    next: i32
+    
+    for i := 0; i < cursor; i += int(next) {
+        if ctext[i] == 0 do break
+
+        letter := rl.GetCodepointNext(cast(cstring)&ctext[i], &next)
+        index := rl.GetGlyphIndex(font, letter)
+
+        if font.chars[index].advanceX != 0 {
+            offset += cast(f32)font.chars[index].advanceX
+        } else {
+            offset += font.recs[index].width + cast(f32)font.chars[index].offsetX
+        }
+    }
+    return offset
 }
 
-render_text_centered :: proc(text: cstring, pos: rl.Vector2, color := rl.WHITE) {
-    spacing :: 0
-    measure := rl.MeasureTextEx(font, text, FONTSIZE, spacing)
-    rl.DrawTextEx(font, text, pos - measure/2, FONTSIZE, spacing, color)
+render_text :: proc(text: cstring, size: int, pos: rl.Vector2, font := font, fontsize: f32 = FONTSIZE, tint := rl.WHITE) {
+    font, size := font, size
+    if font.texture.id == 0 do font = rl.GetFontDefault()
+
+    if size <= 0 do size = cast(int)rl.TextLength(text)
+    offset: f32                                   // Offset X to next character to draw
+    scaleFactor := fontsize / f32(font.baseSize)  // Character quad scaling factor
+    codepointByteCount: i32
+
+    ctext := transmute([^]u8)text
+
+    for i := 0; i < size; i += int(codepointByteCount) {
+        codepoint := rl.GetCodepointNext(cast(cstring)&ctext[i], &codepointByteCount)
+        index := rl.GetGlyphIndex(font, codepoint)
+
+	if codepoint != ' ' && codepoint != '\t' {
+	    rl.DrawTextCodepoint(font, codepoint, pos + {offset, 0}, fontsize, tint)
+	}
+
+	if font.chars[index].advanceX == 0 {
+	    offset += font.recs[index].width * scaleFactor
+	} else {
+	    offset += cast(f32)font.chars[index].advanceX * scaleFactor
+	}
+    }
+}
+
+render_text_centered :: proc(text: cstring, size: int, pos: rl.Vector2, font := font, fontsize: f32 = FONTSIZE, tint := rl.WHITE) {
+    measure := rl.MeasureTextEx(font, text, fontsize, 0)
+    render_text(text, size, pos - measure/2, font, fontsize, tint)
 }
 
 get_mouse_layer :: proc(mpos, offset: rl.Vector2) -> int {

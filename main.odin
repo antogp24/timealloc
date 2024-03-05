@@ -18,7 +18,7 @@ TimeBlock :: struct {
 
 FONTSIZE :: 24
 CLOCKSIZE :: 10
-HOUR_RECT_W :: 500
+HOUR_RECT_W :: 400
 HOUR_RECT_H :: 50
 N_LAYERS :: 4
 UTC_OFFSET :: -5
@@ -55,7 +55,7 @@ main :: proc() {
     rl.SetExitKey(.KEY_NULL)
     cam.zoom = 1.0
     
-    font = rl.LoadFontEx("assets/Inter-Regular.ttf", FONTSIZE, nil, 0)
+    font = resource_load_font("assets/Inter-Regular.ttf", FONTSIZE)
     number_w, number_h = get_number_dimentions()
     layer_w, layer_h = get_layer_dimentions()
     
@@ -104,75 +104,34 @@ main :: proc() {
             using block
 
             // Typing
-            holding_modifiers := rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.LEFT_CONTROL)
-            if (chr >= ' ' && chr <= '~') && !holding_modifiers {
-                inject_at(&text.buf, cursor, u8(chr))
-                cursor += 1
-            }
+	    buf_register_typing(&cursor, &text.buf, cast(u8)chr)
 
             // Text Editing
             if key_is_pressed_or_down(key, .DOWN) {
-                cursor = len(text.buf) - 1
+		buf_goto_end(&cursor, text.buf)
 
             } else if key_is_pressed_or_down(key, .UP) {
-                cursor = 0
+		buf_goto_start(&cursor)
 
             } else if key_is_pressed_or_down(key, .LEFT) {
                 if rl.IsKeyDown(.LEFT_CONTROL) {
-                    for cursor > 0 && len(text.buf) > 0 {
-                        cursor -= 1
-                        cursor = max(cursor, 0)
-                        if cursor == 0 do break
-                        c := text.buf[cursor - 1] 
-                        if c == ' ' || c == '_' || c == ';' || c == ',' || c == 0 {
-                            break
-                        }
-                    }
+		    buf_move_left_by_word(&cursor, text.buf)
                 } else {
-                    cursor -= 1
-                    cursor = max(cursor, 0)
+		    buf_move_left(&cursor)
                 }
 
             } else if key_is_pressed_or_down(key, .RIGHT) {
                 if rl.IsKeyDown(.LEFT_CONTROL) {
-                    for {
-                        cursor += 1
-                        cursor = min(cursor, len(text.buf) - 1)
-                        if cursor == len(text.buf) - 1 do break
-                        c := text.buf[cursor + 1] 
-                        if c == ' ' || c == '_' || c == ';' || c == ',' || c == 0 {
-                            cursor += 1
-                            cursor = min(cursor, len(text.buf) - 1)
-                            break
-                        }
-                    }
+		    buf_move_right_by_word(&cursor, text.buf)
                 } else {
-                    cursor += 1
-                    cursor = min(cursor, len(text.buf) - 1)
+		    buf_move_right(&cursor, text.buf)
                 }
 
             } else if key_is_pressed_or_down(key, .BACKSPACE) {
                 if rl.IsKeyDown(.LEFT_CONTROL) {
-                    for cursor > 0 && len(text.buf) > 0 {
-                        if len(text.buf) > 0 {
-                            cursor -= 1
-                            cursor = max(cursor, 0)
-                            if text.buf[cursor] != 0 {
-                                ordered_remove(&text.buf, cursor)
-                            }
-                        }
-                        if cursor == 0 do break
-                        c := text.buf[cursor - 1] 
-                        if c == ' ' || c == '_' || c == ';' || c == ',' || c == 0 {
-                            break
-                        }
-                    }
+		    buf_backspace_by_word(&cursor, &text.buf)
                 } else if len(text.buf) > 0 {
-                    cursor -= 1
-                    cursor = max(cursor, 0)
-                    if text.buf[cursor] != 0 {
-                        ordered_remove(&text.buf, cursor)
-                    }
+		    buf_backspace(&cursor, &text.buf)
                 }
             }
         }
@@ -216,11 +175,9 @@ main :: proc() {
                     start := mousetime.start / 60
                     duration := (mousetime.end - mousetime.start) / 60
                     append_timeblock(mlayer, start, duration)
-                    last  := len(timeblocks[mlayer]) - 1
-                    strings.write_byte(&timeblocks[mlayer][last].text, 0)
                     
                     active.layer = mlayer
-                    active.block = last
+                    active.block = len(timeblocks[mlayer]) - 1
                     
                 } else if collided != -1 {
                     active.layer = mlayer
@@ -317,14 +274,15 @@ render_layer :: proc(layer: int, offset: rl.Vector2) {
         
         // Draw text at the top of the block
         hour_text := rl.TextFormat("%i", i32(hour))
+	text_len := 2 if hour >= 10 else 1
         text_pos := rect_pos + rl.Vector2{0, -number_h/2}
-        render_text_centered(hour_text, text_pos)
+        render_text_centered(hour_text, text_len, text_pos)
 
-        // Draw the number 24
+        // Draw the number 24 at the end
         if hour == 23 {
             hour_text := rl.TextFormat("%i", 24)
             text_pos := rect_pos + rl.Vector2{HOUR_RECT_W, -number_h/2}
-            render_text_centered(hour_text, text_pos)
+            render_text_centered(hour_text, 2, text_pos)
         }
         
         // Draw lines to indicate half and quarter an hour.
@@ -346,7 +304,8 @@ render_layer :: proc(layer: int, offset: rl.Vector2) {
 render_timeblocks :: proc(layer: int, offset: rl.Vector2) {
     for _, i in timeblocks[layer] {
         text := timeblock_cstring(&timeblocks[layer][i])
-        text_w, text_h := get_text_dimentions(text)
+        text_len := len(timeblocks[layer][i].text.buf) - 1
+        text_w, text_h := get_text_dimentions(text, text_len)
         
         is_active := (active.block == i && active.layer == layer)
         cursor := timeblocks[layer][i].cursor
@@ -354,11 +313,11 @@ render_timeblocks :: proc(layer: int, offset: rl.Vector2) {
         color: rl.Color = {13, 13, 200, 200} if is_active else {13, 13, 13, 200}
         
         rect := get_timeblock_rect(layer, i, offset, HOUR_RECT_H/4)
-        rl.DrawRectangleRounded(rect, .25, 50, color)
+        rl.DrawRectangleRounded(rect, 1, 50, color)
 
         rect_center := rl.Vector2{rect.x + rect.width/2, rect.y + rect.height/2}
-        render_text_centered(text, rect_center)
-        
+        render_text_centered(text, text_len, rect_center)
+
         if is_active {
             offset := get_text_offset(text, cursor)
             cursor_pos: rl.Vector2 = rect_center + {offset - text_w/2, 0}
@@ -368,7 +327,7 @@ render_timeblocks :: proc(layer: int, offset: rl.Vector2) {
             end:   rl.Vector2 = cursor_pos + {0, cursor_h/2}
             
             // Blinking cursor
-            alpha := f32(1)//f32(math.cos(math.PI*f32(elapsedtime)) + 1) / 2
+            alpha := f32(math.cos(math.PI*f32(elapsedtime*2))*0.35 + 0.65)
             rl.DrawLineEx(start, end, 2, rl.ColorAlpha(rl.GREEN, alpha)) 
         }
     }
@@ -459,7 +418,5 @@ timealloc :: proc(start, end: Time, offset: rl.Vector2) -> (success: bool) {
     if layer == N_LAYERS do return false
 
     append_timeblock(layer, start_hour, duration)
-    last := len(timeblocks[layer]) - 1
-    strings.write_byte(&timeblocks[layer][last].text, 0)
     return true
 }
