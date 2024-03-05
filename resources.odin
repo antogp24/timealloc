@@ -14,7 +14,7 @@ resource_load_font :: proc($path: cstring, fontsize: i32) -> (font: rl.Font) {
 	ext := rl.GetFileExtension(path)
 	font = rl.LoadFontFromMemory(ext, raw_data(data), size, fontsize, nil, 0)
     } else {
-	font = rl.LoadFontEx(path, FONTSIZE, nil, 0)
+	font = rl.LoadFontEx(path, fontsize, nil, 0)
     }
     return font
 }

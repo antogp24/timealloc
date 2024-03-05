@@ -94,12 +94,12 @@ get_text_dimentions :: proc(text: cstring, size: int, font := font, fontsize: f3
     return w, h
 } 
 
-get_number_dimentions :: proc() -> (f32, f32) {
-    measure := rl.MeasureTextEx(font, "0", FONTSIZE, 0)
+get_number_dimentions :: proc(font := font, fontsize: f32 = FONTSIZE) -> (f32, f32) {
+    measure := rl.MeasureTextEx(font, "0", fontsize, 0)
     return measure.x, measure.y
 } 
 
-get_text_offset :: proc(text: cstring, cursor: int) -> (offset: f32) {
+get_text_offset :: proc(text: cstring, cursor: int, font := font, fontsize: f32 = FONTSIZE) -> (offset: f32) {
     if font.texture.id == 0 || text == nil || cursor == 0 {
         return 0
     }
