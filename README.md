@@ -8,6 +8,9 @@ Time management application. Managing time can be just like managing memory, fru
 > [!WARNING]
 > This software is very simple in functionality. Keep your expectations low.
 
+## Demo
+<video src="./assets/videos/demo.mp4" controls></video>
+
 ## How it works ⏰
 The application shows a *timeline* of all the hours in the day. You can place *textboxes* indicating what activities
 you will be doing at that time of the day. To have overlapping activities, there's a fixed amount of *layers* you can use.
