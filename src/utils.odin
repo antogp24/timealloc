@@ -2,7 +2,6 @@ package main
 
 import "core:fmt"
 import "core:time"
-import "core:math"
 import "core:strings"
 
 import rl "vendor:raylib"
@@ -31,30 +30,8 @@ hms_to_hours :: proc(h, m, s: f32) -> (hours: f32) {
     return h + m/60 + s/3600
 }
 
-timeblock_cstring :: proc(using t: ^TimeBlock) -> cstring {
-    return cstring(raw_data(text.buf[:]))
-}
-
 goto_hour :: proc(hour: int) {
     cam.target.x = f32(hour) * HOUR_RECT_W
-}
-
-square_wave :: proc(x, period: f32) -> bool {
-    result := -math.floor(math.sin(x * math.PI / period))
-    return bool(int(result))
-}
-
-timer_update :: proc(key: rl.KeyboardKey, dt: f32) {
-    if rl.IsKeyDown(key) {
-        keytimers[key] += dt
-    } else {
-        keytimers[key] = 0
-    }
-}
-
-key_is_pressed_or_down :: proc(pressed, key: rl.KeyboardKey, threshold: f32 = 0.3) -> bool {
-    timer := keytimers[key]
-    return pressed == key || (timer > threshold && square_wave(timer, 0.015))
 }
 
 get_current_hour :: proc() -> f32 {
@@ -81,11 +58,11 @@ get_text_dimentions :: proc(text: cstring, size: int, font := font, fontsize: f3
         letter := rl.GetCodepointNext(cast(cstring)&ctext[i], &next)
         index := rl.GetGlyphIndex(font, letter)
 
-	if (font.chars[index].advanceX != 0) {
-	    w += cast(f32)font.chars[index].advanceX
-	} else {
-	    w += font.recs[index].width + cast(f32)font.chars[index].offsetX
-	}
+        if (font.chars[index].advanceX != 0) {
+            w += cast(f32)font.chars[index].advanceX
+        } else {
+            w += font.recs[index].width + cast(f32)font.chars[index].offsetX
+        }
     }
 
     w *= scaleFactor
@@ -136,15 +113,15 @@ render_text :: proc(text: cstring, size: int, pos: rl.Vector2, font := font, fon
         codepoint := rl.GetCodepointNext(cast(cstring)&ctext[i], &codepointByteCount)
         index := rl.GetGlyphIndex(font, codepoint)
 
-	if codepoint != ' ' && codepoint != '\t' {
-	    rl.DrawTextCodepoint(font, codepoint, pos + {offset, 0}, fontsize, tint)
-	}
+        if codepoint != ' ' && codepoint != '\t' {
+            rl.DrawTextCodepoint(font, codepoint, pos + {offset, 0}, fontsize, tint)
+        }
 
-	if font.chars[index].advanceX == 0 {
-	    offset += font.recs[index].width * scaleFactor
-	} else {
-	    offset += cast(f32)font.chars[index].advanceX * scaleFactor
-	}
+        if font.chars[index].advanceX == 0 {
+            offset += font.recs[index].width * scaleFactor
+        } else {
+            offset += cast(f32)font.chars[index].advanceX * scaleFactor
+        }
     }
 }
 
