@@ -7,8 +7,8 @@ import rl "vendor:raylib"
 // Text editing for single line buffers.
 
 TextBox :: struct {
-    text: strings.Builder,
     cursor: int,
+    text: strings.Builder,
 }
 
 
@@ -18,10 +18,11 @@ buf_register_typing_numbers :: proc(using t: ^TextBox, chr: u8, limit := -1) {
     if (chr >= '0' && chr <= '9') && !holding_modifiers {
 	if limit == -1 {
 	    inject_at(&text.buf, cursor, chr)
+	    cursor += 1
 	} else if len(text.buf) + 1 <= limit {
 	    inject_at(&text.buf, cursor, chr)
+	    cursor += 1
 	}
-	cursor += 1
     }
     if limit != -1 do cursor = min(cursor, limit)
 }

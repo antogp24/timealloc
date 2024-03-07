@@ -2,7 +2,9 @@ package main
 
 import "core:fmt"
 import "core:math"
+import "core:log"
 import "core:strings"
+import "core:strconv"
 import "core:time"
 import rl "vendor:raylib"
 
@@ -38,6 +40,7 @@ UTC_OFFSET :: -5
 COLOR_BASE03           :: rl.Color{0, 43, 54, 255}
 COLOR_BASE1            :: rl.Color{147, 161, 161, 255}
 COLOR_BASE2            :: rl.Color{238, 232, 213, 255}
+COLOR_ORANGE           :: rl.Color{203, 75, 22, 255}
 COLOR_YELLOW           :: rl.Color{181, 137, 0, 255}
 COLOR_RED              :: rl.Color{220, 50, 47, 255}
 COLOR_MAGENTA          :: rl.Color{211, 54, 130, 255}
@@ -86,7 +89,10 @@ main :: proc() {
     cam.zoom = 1.0
     
     font = resource_load_font("assets/Inter-Regular.ttf", FONTSIZE)
+    defer rl.UnloadFont(font)
     font_big = resource_load_font("assets/Inter-Regular.ttf", FONTBIGSIZE)
+    defer rl.UnloadFont(font_big)
+
     number_w, number_h = get_number_dimentions()
     layer_w, layer_h = get_layer_dimentions()
 
@@ -100,6 +106,9 @@ main :: proc() {
     for i in 0..<len(timealloc_textboxes) {
 	strings.write_byte(&timealloc_textboxes[i].text, 0)
     }
+
+    // Loading from save file
+    serialize_load_and_log()
     
     for !rl.WindowShouldClose() {
         elapsedtime = rl.GetTime()
@@ -112,6 +121,11 @@ main :: proc() {
         if screen_h > N_LAYERS*layer_h {
             center_offset.y = screen_h/2 - N_LAYERS*layer_h/2
         }
+
+	// Saving the timeblocks to disk
+	if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyPressed(.S) {
+	    serialize_save_and_log()
+	}
 
         // Moving the camera
         if mv := rl.GetMouseWheelMove(); mv != 0 {
@@ -144,32 +158,80 @@ main :: proc() {
 
 	// Typing in the timealloc textboxes
 	if active.timealloc {
+            for key in keytimers {
+                timer_update(key, dt)
+            }
             chr := rl.GetCharPressed()
+            key := rl.GetKeyPressed()
 	    textbox := &timealloc_textboxes[active.tblock]
 	    using textbox
 
 	    type := active.tblock % 2
 	    buf_register_typing_numbers(textbox, u8(chr), 2 + 1)
 
-	    if rl.IsKeyPressed(.LEFT) {
+	    if key_is_pressed_or_down(key, .LEFT) {
 		active.tblock -= 1
-	    } else if rl.IsKeyPressed(.RIGHT) {
+
+	    } else if key_is_pressed_or_down(key, .RIGHT) {
 		active.tblock += 1
-	    } else if rl.IsKeyPressed(.UP) {
+
+	    } else if key_is_pressed_or_down(key, .UP) {
 		if len(text.buf) == 1 {
-		    inject_at(&text.buf, cursor, '0')
-		    cursor += 1
+		    inject_at(&text.buf, 0, '0')
+		    cursor = 1
 		} else {
+		    number, ok := strconv.parse_int(cast(string) text.buf[:])
+		    assert(!ok)
+		    if type == 0 do number = (number + 1) % (24 + 1)
+		    else         do number = (number + 1) % (60 + 1)
+		    if number == 10 do cursor += 1
+		    strings.builder_reset(&text)
+		    if number < 10 {
+			strings.write_byte(&text, '0' + u8(number))
+		    } else {
+			strings.write_byte(&text, '0' + u8(number / 10))
+			strings.write_byte(&text, '0' + u8(number % 10))
+		    }
+		    strings.write_byte(&text, 0)
 		}
-	    } else if rl.IsKeyPressed(.DOWN) {
+
+	    } else if key_is_pressed_or_down(key, .DOWN) {
 		if len(text.buf) == 1 {
-		    if type == 0 do inject_at(&text.buf, cursor, '2', '4')
-		    else         do inject_at(&text.buf, cursor, '6', '0')
-		    cursor += 2
+		    if type == 0 do inject_at(&text.buf, 0, '2', '4')
+		    else         do inject_at(&text.buf, 0, '6', '0')
+		    cursor = 2
 		} else {
+		    number, ok := strconv.parse_int(cast(string) text.buf[:])
+		    assert(!ok)
+		    if number - 1 < 0 {
+			if type == 0 do number = 24
+			if type == 1 do number = 60
+			cursor += 1
+		    } else {
+			number = number - 1
+		    }
+		    if number == 9 do cursor -= 1
+		    strings.builder_reset(&text)
+		    if number < 10 {
+			strings.write_byte(&text, '0' + u8(number))
+		    } else {
+			strings.write_byte(&text, '0' + u8(number / 10))
+			strings.write_byte(&text, '0' + u8(number % 10))
+		    }
+		    strings.write_byte(&text, 0)
 		}
-	    } else if rl.IsKeyPressed(.BACKSPACE) {
+
+	    } else if key_is_pressed_or_down(key, .BACKSPACE) {
 		buf_backspace(textbox)
+
+	    } else if rl.IsKeyPressed(.ENTER) {
+		active.timealloc = false
+		number0, _ := strconv.parse_int(cast(string) timealloc_textboxes[0].text.buf[:])
+		number1, _ := strconv.parse_int(cast(string) timealloc_textboxes[1].text.buf[:])
+		number2, _ := strconv.parse_int(cast(string) timealloc_textboxes[2].text.buf[:])
+		number3, _ := strconv.parse_int(cast(string) timealloc_textboxes[3].text.buf[:])
+		start, end: Time = {number0, number1}, {number2, number3}
+		timealloc(start, end, center_offset)
 	    }
 	    active.tblock = clamp(active.tblock, 0, 4 - 1)
 	}
@@ -227,12 +289,21 @@ main :: proc() {
         if rl.IsMouseButtonPressed(.LEFT) && !mouse_on_hour_block {
 	    active.layer, active.block = -1, -1
         }       
+        if rl.IsMouseButtonPressed(.LEFT) && mouse_on_hour_block {
+	    active.layer, active.block = mlayer, -1
+        }       
         
         if mouse_on_hour_block && !active.timealloc {
             // snapping the mouse position to minutes
             x := mpos_world.x - number_w
             t := f32(HOUR_RECT_W / 60)
             pos := t * math.floor(x / t)
+
+	    // Deleting the timeblocks
+	    if rl.IsMouseButtonPressed(.RIGHT) {
+                collided := get_collided_timeblock(mlayer, mpos, center_offset, 0)
+		ordered_remove(&timeblocks[mlayer], collided)
+	    }
             
             if rl.IsMouseButtonPressed(.LEFT) {
                 mousetime.start = math.ceil(60*pos / HOUR_RECT_W)
@@ -300,6 +371,7 @@ main :: proc() {
 
         rl.EndDrawing()
     }
+    when AUTO_SAVE do serialize_save_and_log()
 }
 
 render_clock :: proc(layer: int, offset: rl.Vector2) {
@@ -309,11 +381,12 @@ render_clock :: proc(layer: int, offset: rl.Vector2) {
 	rl.DrawLineV({pos.x, 0}, {pos.x, screen_h}, rl.ColorAlpha(COLOR_BASE2, 0.4))
     }
 
-    v1: rl.Vector2 = ({0.5, 1} - {.5, 0}) * CLOCKSIZE + pos + offset
-    v2: rl.Vector2 = ({1.0, 0} - {.5, 0}) * CLOCKSIZE + pos + offset
-    v3: rl.Vector2 = ({0.0, 0} - {.5, 0}) * CLOCKSIZE + pos + offset
+    v1: rl.Vector2 = ({0.5, 1} - {.5, 0}) * CLOCKSIZE + pos + offset //   3.......2
+    v2: rl.Vector2 = ({1.0, 0} - {.5, 0}) * CLOCKSIZE + pos + offset //     .   .
+    v3: rl.Vector2 = ({0.0, 0} - {.5, 0}) * CLOCKSIZE + pos + offset //       1
     
     rl.DrawTriangle(v1, v2, v3, COLOR_GREEN)
+    rl.DrawTriangleLines(v1 + {0, 1}, v2 + {1, 0}, v3 + {-1, 0}, COLOR_BG)
 }
 
 render_layer :: proc(layer: int, offset: rl.Vector2) {
@@ -487,30 +560,6 @@ get_collided_timeblock_rect :: proc(layer: int, rect: rl.Rectangle, offset: rl.V
 
 get_collided_timeblock :: proc{get_collided_timeblock_pos, get_collided_timeblock_rect}
 
-reset_all_active_timeblocks :: proc() {
-    active.layer, active.block = -1, -1
-}
-
-timealloc :: proc(start, end: Time, offset: rl.Vector2) -> (success: bool) {
-    start_hour := hms_to_hours(auto_cast start.hours, auto_cast start.minutes, 0)
-    end_hour := hms_to_hours(auto_cast end.hours, auto_cast end.minutes, 0)
-    if start_hour > end_hour do start_hour, end_hour = end_hour, start_hour
-
-    duration := end_hour - start_hour
-
-    layer: int
-    for layer = 0; layer <= N_LAYERS; layer += 1 {
-        if layer == N_LAYERS do break
-        rect := get_timeblock_rect(layer, start_hour, duration, offset, 0)
-        collided := get_collided_timeblock(layer, rect, offset, 0)
-        if collided == -1 do break
-    }
-    if layer == N_LAYERS do return false
-
-    append_timeblock(layer, start_hour, duration)
-    return true
-}
-
 render_timealloc_interface :: proc() {
     // Transparent Background
     rl.DrawRectangleRec({0, 0, screen_w, screen_h}, {0, 43, 54, 200})
@@ -588,4 +637,28 @@ render_timealloc_interface :: proc() {
 	    rl.DrawLineEx(start, end, 2, rl.ColorAlpha(COLOR_BLUE, alpha)) 
 	}
     }
+}
+
+timealloc :: proc(start, end: Time, offset: rl.Vector2) -> (success: bool) {
+    start_hour := hms_to_hours(auto_cast start.hours, auto_cast start.minutes, 0)
+    end_hour := hms_to_hours(auto_cast end.hours, auto_cast end.minutes, 0)
+    if start_hour > end_hour do start_hour, end_hour = end_hour, start_hour
+
+    duration := end_hour - start_hour
+    if duration == 0 do return false
+
+    layer: int
+    for layer = 0; layer <= N_LAYERS; layer += 1 {
+        if layer == N_LAYERS do break
+        rect := get_timeblock_rect(layer, start_hour, duration, offset, 0)
+        collided := get_collided_timeblock(layer, rect, offset, 0)
+        if collided == -1 do break
+    }
+    if layer == N_LAYERS do return false
+
+    goto_hour(auto_cast (start_hour + end_hour)/2)
+    append_timeblock(layer, start_hour, duration)
+    active.layer = layer
+    active.block = len(timeblocks[layer]) - 1
+    return true
 }
