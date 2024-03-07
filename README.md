@@ -59,7 +59,7 @@ $ cd timealloc
 Now open your text editor of choice and change to your specific value in the `build.bat`.
 Change this specific line replace the -5 with your offset.
 ```bat
-odin build src -resource:assets/icon/timealloc.rc -out:timealloc.exe -o:speed -show-timings -define:UTC_OFFSET=-5
+odin build src -resource:assets/icon/timealloc.rc -out:timealloc.exe -o:speed -show-timings -subsystem:windows -define:UTC_OFFSET=-5 -define:AUTO_SAVE=true
 ```
 
 ```console

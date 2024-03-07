@@ -16,7 +16,7 @@ echo Done building timealloc in debug mode.
 GOTO DONE
 
 :RELEASE
-odin build src -resource:assets/icon/timealloc.rc -out:timealloc.exe -o:speed -show-timings -define:UTC_OFFSET=-5
+odin build src -resource:assets/icon/timealloc.rc -out:timealloc.exe -o:speed -show-timings -subsystem:windows -define:UTC_OFFSET=-5 -define:AUTO_SAVE=true
 echo Done building timealloc in release mode.
 GOTO DONE
 
