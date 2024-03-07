@@ -9,7 +9,7 @@ Time management application. Managing time can be just like managing memory, fru
 > This software is very simple in functionality. Keep your expectations low.
 
 ## Demo
-<video src="./assets/videos/demo.mp4" width="1920" height="1080" controls></video>
+https://github.com/antogp24/timealloc/assets/88955960/770f7b71-3609-4550-8a64-33d9067b4272
 
 ## How it works ⏰
 The application shows a *timeline* of all the hours in the day. You can place *textboxes* indicating what activities
