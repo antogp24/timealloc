@@ -18,7 +18,7 @@ All your textboxes will be automatically saved once you close the application, i
 done with the `user.timealloc` file, but it is **NOT** human readable, do not modify it by hand. If the program doesn't
 find that file, it creates it automatically, so place `timealloc.exe` in an empty folder.
 
-## Timeline Bindings 🖱️⌨️  
+## Timeline Keybindings 🖱️⌨️  
 
 - `Ctrl+S`: Save the textboxes
 - `Ctrl+T`: Toggle timealloc
@@ -36,7 +36,7 @@ find that file, it creates it automatically, so place `timealloc.exe` in an empt
 - `mouse:right`: Delete a textbox
 - `mouse:left and drag`: Create a new textbox
 
-## Timealloc Bindings ⌨️
+## Timealloc Keybindings ⌨️
 
 - `Ctrl+T`: Get out of timealloc
 - `esc`: Get out of timealloc
