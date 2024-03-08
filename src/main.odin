@@ -578,11 +578,14 @@ render_timealloc_interface :: proc() {
     // Transparent Background
     rl.DrawRectangleRec({0, 0, screen_w, screen_h}, {0, 43, 54, 200})
 
+    // width and height of the textboxes
+    box_w, box_h := 2*big_number_w + 10, big_number_h + 5
+
     padding :: 5
     {
         text :: "timealloc("
         text_w, _ := get_text_dimentions(text, len(text), font_big, FONTBIGSIZE)
-        offset := rl.Vector2{-(2*big_number_w + padding) * 2 - padding - text_w/2, 0}
+        offset := rl.Vector2{-(box_w + padding) * 2 - padding - text_w/2, 0}
         render_text_centered(text, len(text), {screen_w/2, screen_h/2} + offset, font_big, FONTBIGSIZE, tint=COLOR_VIOLET)
     }
     {
@@ -592,37 +595,37 @@ render_timealloc_interface :: proc() {
     {
         text :: ")"
         text_w, _ := get_text_dimentions(text, len(text), font_big, FONTBIGSIZE)
-        offset := rl.Vector2{(2*big_number_w + padding) * 2 + padding + text_w/2, 0}
+        offset := rl.Vector2{(box_w + padding) * 2 + padding + text_w/2, 0}
         render_text_centered(text, len(text), {screen_w/2, screen_h/2} + offset, font_big, FONTBIGSIZE, tint=COLOR_VIOLET)
     }
     {
-        offset := rl.Vector2{(2*big_number_w + padding) * 2 + padding + big_number_w, -cast(f32)icon_texture.height/2}
+        offset := rl.Vector2{(box_w + padding) * 2 + padding + big_number_w, -cast(f32)icon_texture.height/2}
         rl.DrawTextureV(icon_texture, {screen_w/2, screen_h/2} + offset, rl.WHITE)
     }
     {
         text :: "start"
-        offset := rl.Vector2{-(2*big_number_w + padding) * 1 - padding, -big_number_h}
+        offset := rl.Vector2{-(box_w + padding) * 1 - padding, -box_h}
         render_text_centered(text, len(text), {screen_w/2, screen_h/2} + offset, tint=COLOR_YELLOW)
     }
     {
         text :: "end"
-        offset := rl.Vector2{(2*big_number_w + padding) * 1 + padding, -big_number_h}
+        offset := rl.Vector2{(box_w + padding) * 1 + padding, -box_h}
         render_text_centered(text, len(text), {screen_w/2, screen_h/2} + offset, tint=COLOR_YELLOW)
     }
 
     // Offset to apply to all elements in the loop, to move them to the center of the screen.
     offset := rl.Vector2{
-        screen_w/2 - 4*big_number_w - 1.5*padding,
-        screen_h/2 - big_number_h/2
+        screen_w/2 - 2*box_w - 1.5*padding,
+        screen_h/2 - box_h/2,
     }
 
     for i in 0..<4 {
         is_active := (active.tblock == i)
-        pos: rl.Vector2 = {(2*big_number_w + padding) * f32(i), 0} + offset
+        pos: rl.Vector2 = {(box_w + padding) * f32(i), 0} + offset
         if i < 2 do pos -= {padding, 0}
         else     do pos += {padding, 0}
 
-        rect := rl.Rectangle{pos.x, pos.y, big_number_w*2, big_number_h}
+        rect := rl.Rectangle{pos.x, pos.y, box_w, box_h}
         rect_center := rl.Vector2{rect.x + rect.width/2, rect.y + rect.height/2}
         rect_color: rl.Color = COLOR_TEXTBOX_ACTIVE if is_active else COLOR_TEXTBOX_INACTIVE
         rl.DrawRectangleRounded(rect, 0.5, 50, rect_color)
@@ -635,14 +638,16 @@ render_timealloc_interface :: proc() {
             render_text_centered(text, len(text), pos, tint=COLOR_GREEN)
         }
 
-        pos += {rect.width/2, rect.height/2}
         cursor := timealloc_textboxes[i].cursor
         text := cast(cstring) raw_data(timealloc_textboxes[i].text.buf)
         text_len := len(timealloc_textboxes[i].text.buf) - 1
-        text_w, _ := get_text_dimentions(text, len(text), font_big, FONTBIGSIZE)
-        render_text_centered(text, text_len, pos, font_big, FONTBIGSIZE, tint=COLOR_BASE1)
+        text_pos := pos + {rect.width/2, rect.height/2}
+        render_text_centered(text, text_len, text_pos, font_big, FONTBIGSIZE, tint=COLOR_BASE1)
+
 
         if is_active {
+	    text_w, _ := get_text_dimentions(text, len(text), font_big, FONTBIGSIZE)
+
             offset := get_text_offset(text, cursor, font_big, FONTBIGSIZE)
             cursor_pos: rl.Vector2 = rect_center + {offset - text_w/2, 0}
             cursor_h := rect.height - 10
